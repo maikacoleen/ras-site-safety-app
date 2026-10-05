@@ -13,10 +13,11 @@ enum Role {
 }
 
 model User {
-  id            String    @id
+  id            String    @id @default(cuid())
   name          String
   email         String
   emailVerified Boolean   @default(false)
+  image         String?
   active        Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -119,7 +120,6 @@ model Submission {
 model Photo {
   id           String     @id @default(cuid())
   url          String     
-  publicId     String?    // Cloudinary public_id for deletion
   submissionId String
   createdAt    DateTime   @default(now())
 
