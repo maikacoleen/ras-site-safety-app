@@ -85,7 +85,7 @@ export default function FramerDashboardPage() {
           </h1>
         </div>
         <Link
-          href="/framer/submissions/new"
+          href="/dashboard/framer/submissions"
           className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-white text-[#2a2829] border border-gray-200 shadow-md hover:shadow-lg hover:border-gray-300 transition-all active:scale-[0.98] font-medium text-sm w-fit"
         >
           <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-[#045339]">
