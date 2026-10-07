@@ -30,13 +30,6 @@ const SAMPLE_NOTES = [
   "Routine daily check: PPE 100% compliant across framing team.",
 ];
 
-const SAMPLE_PHOTOS = [
-  "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1517646287270-a5a9ca602e5c?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80",
-];
 
 async function main() {
   console.log("Starting database seed...");
@@ -138,10 +131,6 @@ async function main() {
     const reviewed = dayOffset > 2 ? (i % 3 !== 0) : (i % 2 === 0);
 
     const notes = SAMPLE_NOTES[i % SAMPLE_NOTES.length];
-    const numPhotos = (i % 3 === 0) ? 2 : (i % 2 === 0) ? 1 : 0;
-    const photoUrls = numPhotos > 0 
-      ? Array.from({ length: numPhotos }, (_, idx) => SAMPLE_PHOTOS[(i + idx) % SAMPLE_PHOTOS.length]) 
-      : [];
 
     await prisma.submission.create({
       data: {
@@ -159,16 +148,13 @@ async function main() {
         toolsInGoodCondition: true,
         hazardsIdentified: i % 4 === 0,
         createdAt: subDate,
-        photos: {
-          create: photoUrls.map((url) => ({ url })),
-        },
       },
     });
 
     submissionCount++;
   }
 
-  console.log(`Successfully generated ${submissionCount} submission records with photos and review statuses.`);
+  console.log(`Successfully generated ${submissionCount} submission records with review statuses.`);
   console.log("Seeding completed successfully!");
 }
 
