@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
 import { uploadPhotoToBlob } from "@/lib/blob";
-import { fetchSites, createSubmission } from "@/services/submissions";
+import { fetchSites, createSubmission, Site } from "@/services/submissions";
+import { DatePicker } from "@/components/DatePicker";
 import {
   ArrowLeft,
-  Calendar,
   Loader2,
   Upload,
   X,
@@ -16,13 +16,6 @@ import {
   CheckCircle2,
   Trash2,
 } from "lucide-react";
-
-interface Site {
-  id: string;
-  name: string;
-  address: string | null;
-  active: boolean;
-}
 
 interface SelectedPhoto {
   id: string;
@@ -56,7 +49,6 @@ export default function SubmissionFormPage() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
 
-
   const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState<boolean>(true);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -74,7 +66,6 @@ export default function SubmissionFormPage() {
   const [notes, setNotes] = useState<string>("");
   const [photos, setPhotos] = useState<SelectedPhoto[]>([]);
 
-  
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>("");
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -86,13 +77,24 @@ export default function SubmissionFormPage() {
     }
   }, []);
 
+  const getTodayLocalDateString = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const setTodayDate = () => {
+    setSubmissionDate(getTodayLocalDateString());
+  };
+
   // Verify authentication & fetch sites
   useEffect(() => {
     if (!isPending) {
       if (!session?.user) {
         router.replace("/auth/login");
       } else {
-        fetchSites();
+        fetchSitesList();
         setTodayDate();
       }
     }
@@ -113,31 +115,16 @@ export default function SubmissionFormPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const fetchSites = async () => {
+  const fetchSitesList = async () => {
     try {
       setLoadingSites(true);
-      const res = await fetch("/api/submissions?type=sites");
-      if (!res.ok) {
-        throw new Error("Failed to fetch job sites");
-      }
-      const data: Site[] = await res.json();
+      const data = await fetchSites();
       setSites(data);
     } catch (err: any) {
       showToast("error", "Error loading sites", err.message || "Failed to load job sites.");
     } finally {
       setLoadingSites(false);
     }
-  };
-
-  const getTodayLocalDateString = (d: Date = new Date()) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  const setTodayDate = () => {
-    setSubmissionDate(getTodayLocalDateString());
   };
 
   const handleChecklistToggle = (key: ChecklistKey) => {
@@ -155,31 +142,44 @@ export default function SubmissionFormPage() {
     let rejectedCount = 0;
 
     for (let file of Array.from(files)) {
-      const allowedTypes = [
+      const fileTypeLower = (file.type || "").toLowerCase();
+      const fileNameLower = file.name.toLowerCase();
+
+      const isHeicExtension = fileNameLower.endsWith(".heic") || fileNameLower.endsWith(".heif");
+      const isHeicType = [
+        "image/heic",
+        "image/heif",
+        "image/heic-sequence",
+        "image/heif-sequence",
+      ].includes(fileTypeLower);
+      const isHeic = isHeicExtension || isHeicType;
+
+      const isStandardImage = [
         "image/jpeg",
         "image/png",
         "image/jpg",
-        "image/heic",
-        "image/heif",
-      ];
+        "image/webp",
+      ].includes(fileTypeLower);
 
-      const isHeicExtension = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif");
-      const isHeicType = file.type === "image/heic" || file.type === "image/heif";
-
-      if (!allowedTypes.includes(file.type.toLowerCase()) && !isHeicExtension) {
+      if (!isStandardImage && !isHeic) {
         rejectedCount++;
         continue;
       }
 
       // Convert HEIC/HEIF files to JPEG for browser preview & upload compatibility
-      if (isHeicType || isHeicExtension) {
+      if (isHeic) {
         try {
-          const heic2any = await (heic2anyPromise || import("heic2any").then((m) => m.default));
-          
-          // Pass the raw underlying Blob slice to prevent metadata header conflicts in libheif
-          const rawBlob = file.slice(0, file.size, "image/heic");
+          const heicModule = await (heic2anyPromise || import("heic2any"));
+          const heic2anyFn = typeof heicModule === "function" ? heicModule : (heicModule?.default || heicModule);
 
-          const convertedBlob = await heic2any({
+          if (typeof heic2anyFn !== "function") {
+            throw new Error("HEIC converter function failed to resolve.");
+          }
+
+          // Ensure blob payload has proper HEIC mime type for heic2any libheif WASM parser
+          const rawBlob = file.type ? file : new Blob([file], { type: "image/heic" });
+
+          const convertedBlob = await heic2anyFn({
             blob: rawBlob,
             toType: "image/jpeg",
             quality: 0.8,
@@ -192,9 +192,20 @@ export default function SubmissionFormPage() {
             file.name.replace(/\.(heic|heif)$/i, ".jpg"),
             { type: "image/jpeg" }
           );
-        } catch (error) {
-          console.error("Error converting HEIC image:", error);
-          rejectedCount++;
+        } catch (error: any) {
+          const errDetails =
+            error instanceof Error
+              ? error.message
+              : typeof error === "object"
+                ? JSON.stringify(error, Object.getOwnPropertyNames(error))
+                : String(error);
+          console.error("Error converting HEIC image:", errDetails);
+
+          showToast(
+            "warning",
+            "HEIC Image Conversion Notice",
+            `Could not process HEIC file "${file.name}". Please convert to JPEG or choose another photo.`
+          );
           continue;
         }
       }
@@ -210,8 +221,8 @@ export default function SubmissionFormPage() {
     if (rejectedCount > 0) {
       showToast(
         "error",
-        "Invalid or Unprocessable File",
-        `Only standard image files (PNG, JPEG, WEBP, HEIC) are supported. ${rejectedCount} file(s) were excluded.`
+        "Unsupported File Format",
+        `Only image files (PNG, JPEG, WEBP, HEIC) are supported. ${rejectedCount} file(s) were excluded.`
       );
     }
 
@@ -219,7 +230,6 @@ export default function SubmissionFormPage() {
       setPhotos((prev) => [...prev, ...newPhotos]);
     }
 
-    // Reset input value so re-selecting the same file triggers onChange
     e.target.value = "";
   };
 
@@ -253,7 +263,6 @@ export default function SubmissionFormPage() {
       return false;
     }
 
-    // Checklist validation (at least 1 item checked)
     const hasCheckedItem = Object.values(checklist).some((val) => val === true);
     if (!hasCheckedItem) {
       showToast("error", "Missing required field", "Checklist requires at least one safety item to be checked.");
@@ -277,7 +286,6 @@ export default function SubmissionFormPage() {
       setSubmitting(true);
       setUploadProgressText("Preparing submission...");
 
-      // Upload photos to Vercel Blob
       const photoUrls: string[] = [];
 
       if (photos.length > 0) {
@@ -290,8 +298,7 @@ export default function SubmissionFormPage() {
 
       setUploadProgressText("Saving safety submission...");
 
-      // Submit to backend API
-      const res = await createSubmission(
+      await createSubmission(
         {
           siteId: selectedSiteId,
           date: submissionDate,
@@ -308,7 +315,9 @@ export default function SubmissionFormPage() {
 
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
 
-      // Redirect back to dashboard after brief pause
+      // Task 5: Invoke router.refresh() immediately after submission resolves
+      router.refresh();
+
       setTimeout(() => {
         router.push("/dashboard/framer");
       }, 1500);
@@ -352,13 +361,12 @@ export default function SubmissionFormPage() {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl shadow-lg border backdrop-blur-md transition-all duration-300 animate-in slide-in-from-top-2 ${
-              toast.type === "error"
+            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl shadow-lg border backdrop-blur-md transition-all duration-300 animate-in slide-in-from-top-2 ${toast.type === "error"
                 ? "bg-red-900/90 border-red-700 text-white"
                 : toast.type === "success"
-                ? "bg-[#045339]/95 border-emerald-600 text-white"
-                : "bg-amber-900/90 border-amber-700 text-white"
-            }`}
+                  ? "bg-[#045339]/95 border-emerald-600 text-white"
+                  : "bg-amber-900/90 border-amber-700 text-white"
+              }`}
           >
             {toast.type === "error" ? (
               <AlertCircle className="w-5 h-5 text-red-300 shrink-0 mt-0.5" />
@@ -435,31 +443,16 @@ export default function SubmissionFormPage() {
               )}
             </div>
 
-            {/* Date Picker */}
-            <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                Date <span className="text-red-500">*</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="date"
-                    max={getTodayLocalDateString()}
-                    value={submissionDate}
-                    onChange={(e) => setSubmissionDate(e.target.value)}
-                    className="w-full h-11 px-3.5 rounded-xl border border-gray-300 bg-white text-sm font-medium text-[#2a2829] focus:outline-none focus:ring-2 focus:ring-[#045339] focus:border-transparent transition-all"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={setTodayDate}
-                  className="h-11 px-4 rounded-xl bg-emerald-50 text-[#045339] hover:bg-emerald-100 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0 active:scale-95"
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  Today
-                </button>
-              </div>
-            </div>
+            {/* Reusable Date Picker Component */}
+            <DatePicker
+              label="Date"
+              required
+              value={submissionDate}
+              disableFuture
+              showTodayButton
+              onChange={(val) => setSubmissionDate(val)}
+              inputClassName="h-11 px-3.5 text-sm font-medium"
+            />
           </div>
         </div>
 
@@ -477,11 +470,10 @@ export default function SubmissionFormPage() {
               return (
                 <label
                   key={item.id}
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition-all ${
-                    isChecked
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition-all ${isChecked
                       ? "bg-emerald-50/60 border-emerald-500/80 shadow-sm"
                       : "bg-gray-50/50 border-gray-200 hover:border-gray-300"
-                  }`}
+                    }`}
                 >
                   <div className="pt-0.5">
                     <input
