@@ -88,12 +88,14 @@ This application was built as a technical assessment and focuses on the core fun
 * Photos are stored using Vercel Blob, with their references stored in the database.
 * The application is intended to demonstrate the workflow and functionality of an internal tool rather than serve as a production deployment.
 * The application is designed with mobile use in mind, as framers may complete safety forms from an iPhone on a job site.
-* Photos uploaded from devices using HEIC/HEIF format are supported and converted to JPEG before being stored. This provides compatibility with common iPhone image formats while keeping the stored image format consistent.
+* Photo uploads are supported for JPEG and PNG formats. Photos are compressed on the client side before upload to keep payload size lightweight and fast.
 
 ## Database Design
 The database schema is represented in the attached ERD. The schema uses separate models for users, sites, photos and safety submissions, with submissions linked to both the worker and the site where the form was completed.
 
 I chose fixed fields for the safety checklist rather than storing the checklist as a JSON object so that each safety condition can be queried and filtered independently. User accounts also use an active/inactive state so that users can be deactivated without removing their historical submissions.
+
+<img src="./assets/erd.png" width="450" />
 
 ## Admin
 

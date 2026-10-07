@@ -2,22 +2,14 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
-import { convertHeicToJpeg, looksLikeHeic, looksLikeStandardImage } from "@/lib/convert-heic";
 
 export const maxDuration = 60;
 
-const STANDARD_IMAGE_TYPES = new Set([
+const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
   "image/png",
   "image/webp",
-]);
-
-const HEIC_TYPES = new Set([
-  "image/heic",
-  "image/heif",
-  "image/heic-sequence",
-  "image/heif-sequence",
 ]);
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -49,52 +41,38 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer());
     const mime = (file.type || "").toLowerCase();
-    const isHeic = looksLikeHeic(file.name, mime, bytes) || HEIC_TYPES.has(mime);
-    const isStandardImage = STANDARD_IMAGE_TYPES.has(mime) || looksLikeStandardImage(file.name, mime, bytes);
+    const fileName = (file.name || "").toLowerCase();
+    const isStandardImage =
+      ALLOWED_IMAGE_TYPES.has(mime) ||
+      fileName.endsWith(".jpg") ||
+      fileName.endsWith(".jpeg") ||
+      fileName.endsWith(".png") ||
+      fileName.endsWith(".webp");
 
-    if (!isStandardImage && !isHeic) {
+    if (!isStandardImage) {
       return NextResponse.json(
-        { error: "Only image files (PNG, JPEG/JPG, WEBP, HEIC, HEIF) are supported." },
+        { error: "Only image files (PNG, JPEG/JPG) are supported." },
         { status: 400 }
       );
     }
 
-    let uploadBody: Buffer | File = file;
-    let uploadName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    let uploadContentType = mime || "application/octet-stream";
-
-    if (isHeic) {
-      try {
-        uploadBody = await convertHeicToJpeg(bytes);
-        uploadName = uploadName.replace(/\.(heic|heif)$/i, ".jpg");
-        if (!uploadName.toLowerCase().endsWith(".jpg")) {
-          uploadName = `${uploadName}.jpg`;
-        }
-        uploadContentType = "image/jpeg";
-      } catch (conversionError) {
-        console.error("HEIC conversion error:", conversionError);
-        return NextResponse.json(
-          { error: `Could not convert HEIC/HEIF file "${file.name}" to JPEG.` },
-          { status: 400 }
-        );
-      }
-    }
-
+    const uploadName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const uploadContentType = mime || "image/jpeg";
     const filename = `submissions/${Date.now()}-${uploadName}`;
 
-    const blob = await put(filename, uploadBody, {
+    const blob = await put(filename, file, {
       access: "private",
       addRandomSuffix: true,
       contentType: uploadContentType,
     });
 
     return NextResponse.json({ url: blob.url });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Vercel Blob upload error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to upload photo to Vercel Blob.";
     return NextResponse.json(
-      { error: error.message || "Failed to upload photo to Vercel Blob." },
+      { error: errorMessage },
       { status: 400 }
     );
   }

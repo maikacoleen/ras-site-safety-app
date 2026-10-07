@@ -14,7 +14,6 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
-  Trash2,
 } from "lucide-react";
 
 interface SelectedPhoto {
@@ -43,60 +42,81 @@ const CHECKLIST_ITEMS = [
 
 type ChecklistKey = typeof CHECKLIST_ITEMS[number]["id"];
 
-let heic2anyPromise: Promise<any> | null = null;
+const MAX_SOURCE_FILE_BYTES = 15 * 1024 * 1024;
+const PHOTO_PROCESS_ERROR_TITLE = "Unsupported or Corrupted File";
+const PHOTO_PROCESS_ERROR_DESCRIPTION =
+  "Unable to process photo. Please ensure you upload compatible images (PNG or JPEG) under 15 MB.";
+const UPLOAD_FAILED_TITLE = "Upload Failed";
+const UPLOAD_FAILED_DESCRIPTION =
+  "Something went wrong while saving your form. Please check your connection and try again.";
 
-async function bitmapToJpegFile(bitmap: ImageBitmap, originalName: string): Promise<File> {
-  const canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Could not create canvas context for HEIC conversion.");
-  }
-  ctx.drawImage(bitmap, 0, 0);
+function isSupportedImageFile(file: File): boolean {
+  const type = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+  if (["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(type)) return true;
+  return (
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".webp")
+  );
+}
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (result) => (result ? resolve(result) : reject(new Error("Failed to encode JPEG from HEIC."))),
-      "image/jpeg",
-      0.8
-    );
-  });
+function toJpegFileName(originalName: string): string {
+  const base = originalName.replace(/\.[^.]+$/, "") || "photo";
+  return `${base}.jpg`;
+}
 
-  return new File([blob], originalName.replace(/\.(heic|heif)$/i, ".jpg"), {
-    type: "image/jpeg",
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to decode image."));
+    img.src = src;
   });
 }
 
-async function convertHeicFileToJpeg(file: File): Promise<File> {
+function getTodayLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function convertAndCompressImage(
+  file: File,
+  maxDimension = 1920,
+  quality = 0.75
+): Promise<File> {
+  const objectUrl = URL.createObjectURL(file);
+
   try {
-    const bitmap = await createImageBitmap(file);
-    const converted = await bitmapToJpegFile(bitmap, file.name);
-    bitmap.close();
-    return converted;
-  } catch {
-    // Chrome and other browsers cannot decode HEIC natively.
+    const img = await loadImageElement(objectUrl);
+    const scale = Math.min(1, maxDimension / img.naturalWidth, maxDimension / img.naturalHeight);
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Canvas unavailable.");
+    }
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const compressedBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => (result ? resolve(result) : reject(new Error("JPEG encode failed."))),
+        "image/jpeg",
+        quality
+      );
+    });
+
+    return new File([compressedBlob], toJpegFileName(file.name), { type: "image/jpeg" });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
   }
-
-  const heicModule = await (heic2anyPromise || import("heic2any"));
-  const heic2anyFn =
-    typeof heicModule === "function" ? heicModule : heicModule?.default || heicModule;
-
-  if (typeof heic2anyFn !== "function") {
-    throw new Error("HEIC converter function failed to resolve.");
-  }
-
-  const payload = new Blob([await file.arrayBuffer()], { type: "image/heic" });
-  const convertedBlob = await heic2anyFn({
-    blob: payload,
-    toType: "image/jpeg",
-    quality: 0.8,
-  });
-  const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-
-  return new File([singleBlob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), {
-    type: "image/jpeg",
-  });
 }
 
 export default function SubmissionFormPage() {
@@ -106,7 +126,7 @@ export default function SubmissionFormPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState<boolean>(true);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-  const [submissionDate, setSubmissionDate] = useState<string>("");
+  const [submissionDate, setSubmissionDate] = useState<string>(() => getTodayLocalDateString());
   const [checklist, setChecklist] = useState<Record<ChecklistKey, boolean>>({
     ppeHardHat: false,
     ppeVest: false,
@@ -124,38 +144,12 @@ export default function SubmissionFormPage() {
   const [uploadProgressText, setUploadProgressText] = useState<string>("");
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Preload heic2any as soon as the component mounts in the browser
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      heic2anyPromise = import("heic2any").then((m) => m.default);
-    }
-  }, []);
-
-  const getTodayLocalDateString = (d: Date = new Date()) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  const setTodayDate = () => {
-    setSubmissionDate(getTodayLocalDateString());
-  };
-
-  // Verify authentication & fetch sites
-  useEffect(() => {
-    if (!isPending) {
-      if (!session?.user) {
-        router.replace("/auth/login");
-      } else {
-        fetchSitesList();
-        setTodayDate();
-      }
-    }
-  }, [session, isPending, router]);
 
   const showToast = (type: "error" | "success" | "warning", title: string, description: string) => {
-    const id = Math.random().toString(36).substring(2, 9);
+    const id = crypto.randomUUID();
     const newToast: ToastMessage = { id, type, title, description };
     setToasts((prev) => [...prev, newToast]);
 
@@ -165,21 +159,39 @@ export default function SubmissionFormPage() {
     }, 5000);
   };
 
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  // Verify authentication & fetch sites
+  useEffect(() => {
+    let isCancelled = false;
 
-  const fetchSitesList = async () => {
-    try {
-      setLoadingSites(true);
-      const data = await fetchSites();
-      setSites(data);
-    } catch (err: any) {
-      showToast("error", "Error loading sites", err.message || "Failed to load job sites.");
-    } finally {
-      setLoadingSites(false);
+    if (!isPending) {
+      if (!session?.user) {
+        router.replace("/auth/login");
+      } else {
+        fetchSites()
+          .then((data) => {
+            if (!isCancelled) setSites(data);
+          })
+          .catch((err) => {
+            if (!isCancelled) {
+              console.error("Error loading sites:", err);
+              showToast(
+                "error",
+                UPLOAD_FAILED_TITLE,
+                "Something went wrong while loading job sites. Please try again."
+              );
+            }
+          })
+          .finally(() => {
+            if (!isCancelled) setLoadingSites(false);
+          });
+      }
     }
-  };
+
+    return () => {
+      isCancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, isPending, router]);
 
   const handleChecklistToggle = (key: ChecklistKey) => {
     setChecklist((prev) => ({
@@ -193,63 +205,32 @@ export default function SubmissionFormPage() {
     if (!files || files.length === 0) return;
 
     const newPhotos: SelectedPhoto[] = [];
-    let rejectedCount = 0;
+    let failedCount = 0;
 
-    for (let file of Array.from(files)) {
-      const fileTypeLower = (file.type || "").toLowerCase();
-      const fileNameLower = file.name.toLowerCase();
-
-      const isHeicExtension = fileNameLower.endsWith(".heic") || fileNameLower.endsWith(".heif");
-      const isHeicType = [
-        "image/heic",
-        "image/heif",
-        "image/heic-sequence",
-        "image/heif-sequence",
-      ].includes(fileTypeLower);
-      const isHeic = isHeicExtension || isHeicType;
-
-      const isStandardImage = [
-        "image/jpeg",
-        "image/png",
-        "image/jpg",
-        "image/webp",
-      ].includes(fileTypeLower);
-
-      if (!isStandardImage && !isHeic) {
-        rejectedCount++;
+    for (const originalFile of Array.from(files)) {
+      if (!isSupportedImageFile(originalFile) || originalFile.size > MAX_SOURCE_FILE_BYTES) {
+        failedCount++;
         continue;
       }
 
-      // Convert HEIC/HEIF to JPEG for browser preview when possible.
-      // If the browser cannot convert, keep the original file — the upload API converts server-side.
-      if (isHeic) {
-        try {
-          file = await convertHeicFileToJpeg(file);
-        } catch (error: any) {
-          const errDetails =
-            error instanceof Error
-              ? error.message
-              : typeof error === "object"
-                ? JSON.stringify(error, Object.getOwnPropertyNames(error))
-                : String(error);
-          console.warn("Browser HEIC conversion failed; uploading original for server conversion.", errDetails);
-        }
+      try {
+        const processedFile = await convertAndCompressImage(originalFile);
+        console.log(
+          `Compressed photo "${originalFile.name}": ${(originalFile.size / (1024 * 1024)).toFixed(2)} MB -> ${(processedFile.size / (1024 * 1024)).toFixed(2)} MB`
+        );
+        newPhotos.push({
+          id: crypto.randomUUID(),
+          file: processedFile,
+          previewUrl: URL.createObjectURL(processedFile),
+        });
+      } catch (error) {
+        console.error("Photo processing failed:", error);
+        failedCount++;
       }
-
-      const previewUrl = URL.createObjectURL(file);
-      newPhotos.push({
-        id: crypto.randomUUID(),
-        file,
-        previewUrl,
-      });
     }
 
-    if (rejectedCount > 0) {
-      showToast(
-        "error",
-        "Unsupported File Format",
-        `Only image files (PNG, JPEG, WEBP, HEIC) are supported. ${rejectedCount} file(s) were excluded.`
-      );
+    if (failedCount > 0) {
+      showToast("error", PHOTO_PROCESS_ERROR_TITLE, PHOTO_PROCESS_ERROR_DESCRIPTION);
     }
 
     if (newPhotos.length > 0) {
@@ -341,28 +322,15 @@ export default function SubmissionFormPage() {
 
       photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
 
-      // Task 5: Invoke router.refresh() immediately after submission resolves
       router.refresh();
 
       setTimeout(() => {
         router.push("/dashboard/framer");
       }, 1500);
-    } catch (err: any) {
+    } catch (err) {
       clearTimeout(timeoutId);
       console.error("Submission error:", err);
-      if (err.name === "AbortError") {
-        showToast(
-          "error",
-          "Submission Timed Out",
-          "There was a problem submitting your form due to a connection timeout. Please try again."
-        );
-      } else {
-        showToast(
-          "error",
-          "Submission Failed",
-          err.message || "There was a problem submitting your safety form. Please try again."
-        );
-      }
+      showToast("error", UPLOAD_FAILED_TITLE, UPLOAD_FAILED_DESCRIPTION);
     } finally {
       setSubmitting(false);
       setUploadProgressText("");
@@ -557,7 +525,7 @@ export default function SubmissionFormPage() {
             <input
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/jpg,image/webp,.heic,.heif,image/HEIC,image/heif"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
               onChange={handlePhotoSelect}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
@@ -569,7 +537,7 @@ export default function SubmissionFormPage() {
                 Click or drag & drop photos here
               </p>
               <p className="text-xs text-gray-400">
-                Supports PNG, JPEG, HEIC, HEIF images (Videos not allowed)
+                Supports PNG and JPEG images (Videos not allowed)
               </p>
             </div>
           </div>
@@ -584,25 +552,29 @@ export default function SubmissionFormPage() {
                 {photos.map((item) => (
                   <div
                     key={item.id}
-                    className="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-100 aspect-square"
+                    className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-100 aspect-square"
                   >
                     <img
                       src={item.previewUrl}
                       alt="Selected site photo preview"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePhoto(item.id)}
-                        className="p-2 rounded-full bg-red-600 text-white shadow-lg hover:bg-red-700 transition-transform active:scale-95"
-                        title="Remove photo"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="absolute bottom-1 left-1 right-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] truncate">
-                      {item.file.name}
+
+                    {/* Always visible top-right remove button for mobile & desktop */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(item.id)}
+                      className="absolute top-1.5 right-1.5 z-10 p-1.5 rounded-full bg-black/60 hover:bg-red-600 text-white shadow-md transition-colors active:scale-90"
+                      title="Remove photo"
+                      aria-label="Remove photo"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-2 pt-4">
+                      <p className="text-white text-[10px] font-medium truncate">
+                        {item.file.name}
+                      </p>
                     </div>
                   </div>
                 ))}
