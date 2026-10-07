@@ -45,6 +45,60 @@ type ChecklistKey = typeof CHECKLIST_ITEMS[number]["id"];
 
 let heic2anyPromise: Promise<any> | null = null;
 
+async function bitmapToJpegFile(bitmap: ImageBitmap, originalName: string): Promise<File> {
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not create canvas context for HEIC conversion.");
+  }
+  ctx.drawImage(bitmap, 0, 0);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => (result ? resolve(result) : reject(new Error("Failed to encode JPEG from HEIC."))),
+      "image/jpeg",
+      0.8
+    );
+  });
+
+  return new File([blob], originalName.replace(/\.(heic|heif)$/i, ".jpg"), {
+    type: "image/jpeg",
+  });
+}
+
+async function convertHeicFileToJpeg(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const converted = await bitmapToJpegFile(bitmap, file.name);
+    bitmap.close();
+    return converted;
+  } catch {
+    // Chrome and other browsers cannot decode HEIC natively.
+  }
+
+  const heicModule = await (heic2anyPromise || import("heic2any"));
+  const heic2anyFn =
+    typeof heicModule === "function" ? heicModule : heicModule?.default || heicModule;
+
+  if (typeof heic2anyFn !== "function") {
+    throw new Error("HEIC converter function failed to resolve.");
+  }
+
+  const payload = new Blob([await file.arrayBuffer()], { type: "image/heic" });
+  const convertedBlob = await heic2anyFn({
+    blob: payload,
+    toType: "image/jpeg",
+    quality: 0.8,
+  });
+  const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+
+  return new File([singleBlob], file.name.replace(/\.(heic|heif)$/i, ".jpg"), {
+    type: "image/jpeg",
+  });
+}
+
 export default function SubmissionFormPage() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
@@ -166,32 +220,11 @@ export default function SubmissionFormPage() {
         continue;
       }
 
-      // Convert HEIC/HEIF files to JPEG for browser preview & upload compatibility
+      // Convert HEIC/HEIF to JPEG for browser preview when possible.
+      // If the browser cannot convert, keep the original file — the upload API converts server-side.
       if (isHeic) {
         try {
-          const heicModule = await (heic2anyPromise || import("heic2any"));
-          const heic2anyFn = typeof heicModule === "function" ? heicModule : (heicModule?.default || heicModule);
-
-          if (typeof heic2anyFn !== "function") {
-            throw new Error("HEIC converter function failed to resolve.");
-          }
-
-          // Ensure blob payload has proper HEIC mime type for heic2any libheif WASM parser
-          const rawBlob = file.type ? file : new Blob([file], { type: "image/heic" });
-
-          const convertedBlob = await heic2anyFn({
-            blob: rawBlob,
-            toType: "image/jpeg",
-            quality: 0.8,
-          });
-
-          const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-
-          file = new File(
-            [singleBlob],
-            file.name.replace(/\.(heic|heif)$/i, ".jpg"),
-            { type: "image/jpeg" }
-          );
+          file = await convertHeicFileToJpeg(file);
         } catch (error: any) {
           const errDetails =
             error instanceof Error
@@ -199,14 +232,7 @@ export default function SubmissionFormPage() {
               : typeof error === "object"
                 ? JSON.stringify(error, Object.getOwnPropertyNames(error))
                 : String(error);
-          console.error("Error converting HEIC image:", errDetails);
-
-          showToast(
-            "warning",
-            "HEIC Image Conversion Notice",
-            `Could not process HEIC file "${file.name}". Please convert to JPEG or choose another photo.`
-          );
-          continue;
+          console.warn("Browser HEIC conversion failed; uploading original for server conversion.", errDetails);
         }
       }
 
@@ -280,7 +306,7 @@ export default function SubmissionFormPage() {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     try {
       setSubmitting(true);
@@ -291,7 +317,7 @@ export default function SubmissionFormPage() {
       if (photos.length > 0) {
         for (let i = 0; i < photos.length; i++) {
           setUploadProgressText(`Uploading photo ${i + 1} of ${photos.length}...`);
-          const uploadResult = await uploadPhotoToBlob(photos[i].file, { timeoutMs: 15000 });
+          const uploadResult = await uploadPhotoToBlob(photos[i].file, { timeoutMs: 60000 });
           photoUrls.push(uploadResult.url);
         }
       }
