@@ -1,72 +1,100 @@
 import { put } from "@vercel/blob";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
+import { convertHeicToJpeg, looksLikeHeic, looksLikeStandardImage } from "@/lib/convert-heic";
+
+export const maxDuration = 60;
+
+const STANDARD_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+
+const HEIC_TYPES = new Set([
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const contentType = request.headers.get("content-type") || "";
 
-  // Direct FormData File Upload
-  if (contentType.includes("multipart/form-data")) {
-    try {
-      const formData = await request.formData();
-      const file = formData.get("file") as File | null;
+  if (!contentType.includes("multipart/form-data")) {
+    return NextResponse.json(
+      { error: "Expected multipart/form-data file upload." },
+      { status: 400 }
+    );
+  }
 
-      if (!file) {
-        return NextResponse.json(
-          { error: "No file provided in request." },
-          { status: 400 }
-        );
-      }
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
 
-      // Allowed MIME types (HEIC/HEIF are converted to JPEG on the client before hitting this endpoint)
-      const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
-      if (!allowedTypes.includes(file.type.toLowerCase())) {
-        return NextResponse.json(
-          { error: "Only image files (PNG, JPEG/JPG) are supported." },
-          { status: 400 }
-        );
-      }
-
-      const filename = `submissions/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-
-      // Upload to Vercel Blob
-      const blob = await put(filename, file, {
-        access: "private",
-        addRandomSuffix: true,
-      });
-
-      return NextResponse.json({ url: blob.url });
-    } catch (error: any) {
-      console.error("Vercel Blob upload error:", error);
+    if (!file) {
       return NextResponse.json(
-        { error: error.message || "Failed to upload photo to Vercel Blob." },
+        { error: "No file provided in request." },
         { status: 400 }
       );
     }
-  }
 
-  // Client-side handleUpload flow fallback
-  try {
-    const body = (await request.json()) as HandleUploadBody;
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async () => {
-        return {
-          allowedContentTypes: ["image/jpeg", "image/png"],
-          tokenPayload: JSON.stringify({}),
-        };
-      },
-      onUploadCompleted: async ({ blob }: any) => {
-        console.log("Blob upload completed:", blob.url);
-      },
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const mime = (file.type || "").toLowerCase();
+    const isHeic = looksLikeHeic(file.name, mime, bytes) || HEIC_TYPES.has(mime);
+    const isStandardImage = STANDARD_IMAGE_TYPES.has(mime) || looksLikeStandardImage(file.name, mime, bytes);
+
+    if (!isStandardImage && !isHeic) {
+      return NextResponse.json(
+        { error: "Only image files (PNG, JPEG/JPG, WEBP, HEIC, HEIF) are supported." },
+        { status: 400 }
+      );
+    }
+
+    let uploadBody: Buffer | File = file;
+    let uploadName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    let uploadContentType = mime || "application/octet-stream";
+
+    if (isHeic) {
+      try {
+        uploadBody = await convertHeicToJpeg(bytes);
+        uploadName = uploadName.replace(/\.(heic|heif)$/i, ".jpg");
+        if (!uploadName.toLowerCase().endsWith(".jpg")) {
+          uploadName = `${uploadName}.jpg`;
+        }
+        uploadContentType = "image/jpeg";
+      } catch (conversionError) {
+        console.error("HEIC conversion error:", conversionError);
+        return NextResponse.json(
+          { error: `Could not convert HEIC/HEIF file "${file.name}" to JPEG.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const filename = `submissions/${Date.now()}-${uploadName}`;
+
+    const blob = await put(filename, uploadBody, {
+      access: "private",
+      addRandomSuffix: true,
+      contentType: uploadContentType,
     });
 
-    return NextResponse.json(jsonResponse);
+    return NextResponse.json({ url: blob.url });
   } catch (error: any) {
-    console.error("Vercel Blob handleUpload error:", error);
+    console.error("Vercel Blob upload error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to generate upload token." },
+      { error: error.message || "Failed to upload photo to Vercel Blob." },
       { status: 400 }
     );
   }

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { SubmissionItem } from "@/services/submissions";
+import { getPrivatePhotoSrc } from "@/lib/blob";
 import {
   CheckCircle2,
   Clock,
@@ -169,22 +170,25 @@ export function SubmissionDetailModal({
                 Attached Site Photos ({submission.photos.length})
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {submission.photos.map((photo) => (
-                  <div
-                    key={photo.id}
-                    onClick={() => setActivePhotoPreview(photo.url)}
-                    className="relative rounded-2xl overflow-hidden border border-gray-200 aspect-video bg-gray-100 group cursor-pointer"
-                  >
-                    <img
-                      src={photo.url}
-                      alt="Site submission photo"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
-                      <Eye className="w-5 h-5 mr-1" /> View Full
+                {submission.photos.map((photo) => {
+                  const photoSrc = getPrivatePhotoSrc(photo.url);
+                  return (
+                    <div
+                      key={photo.id}
+                      onClick={() => setActivePhotoPreview(photoSrc)}
+                      className="relative rounded-2xl overflow-hidden border border-gray-200 aspect-video bg-gray-100 group cursor-pointer"
+                    >
+                      <img
+                        src={photoSrc}
+                        alt="Site submission photo"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                        <Eye className="w-5 h-5 mr-1" /> View Full
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
