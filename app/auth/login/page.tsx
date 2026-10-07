@@ -118,9 +118,9 @@ function LoginFormContent() {
             <Image
               src="/logo/ras-logo.png"
               alt="Ron Anderson & Sons Logo"
-              width={220}
-              height={75}
-              className="h-16 sm:h-20 w-auto object-contain"
+              width={260}
+              height={90}
+              className="h-20 sm:h-24 w-auto object-contain"
               priority
             />
           </div>

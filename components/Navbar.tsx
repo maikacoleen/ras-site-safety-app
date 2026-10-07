@@ -61,9 +61,9 @@ export function Navbar() {
               <Image
                 src="/logo/ras-transparent-logo.png"
                 alt="Ron Anderson & Sons"
-                width={160}
-                height={40}
-                className="h-7 w-auto object-contain"
+                width={180}
+                height={45}
+                className="h-8 sm:h-9 w-auto object-contain"
                 priority
               />
             </div>
