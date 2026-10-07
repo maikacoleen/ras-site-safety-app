@@ -103,6 +103,7 @@ model Submission {
   laddersInspected      Boolean  @default(false)
   toolsInGoodCondition  Boolean  @default(false)
   hazardsIdentified     Boolean  @default(false)
+  reviewed              Boolean  @default(false)
 
   // Foreign keys & relations
   workerId              String
