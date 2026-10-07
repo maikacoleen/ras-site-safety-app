@@ -351,7 +351,7 @@ export default function SubmissionFormPage() {
   return (
     <div className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8">
       {/* Toast Notification Container */}
-      <div className="fixed top-20 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+      <div className="fixed top-20 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:translate-x-0 z-50 flex flex-col gap-2 w-[calc(100%-2rem)] max-w-sm pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}

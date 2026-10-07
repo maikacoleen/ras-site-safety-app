@@ -99,24 +99,26 @@ export function SubmissionDetailModal({
           </div>
 
           {/* Meta Info */}
-          <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3.5 rounded-2xl border border-gray-100 text-xs">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 text-xs">
+            <div className="space-y-0.5 border-b border-gray-200/60 pb-3 sm:pb-0 sm:border-b-0">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
                 Submitted By
               </span>
-              <span className="font-semibold text-gray-900 block mt-0.5">
+              <span className="font-semibold text-gray-900 block text-sm sm:text-xs">
                 {submission.worker?.name || "Unknown"}
               </span>
-              <span className="text-[10px] text-gray-500 block">
-                {submission.worker?.email}
-              </span>
+              {submission.worker?.email && (
+                <span className="text-[11px] text-gray-500 block break-words">
+                  {submission.worker.email}
+                </span>
+              )}
             </div>
 
-            <div>
+            <div className="space-y-0.5 sm:border-l sm:border-gray-200/60 sm:pl-4">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
                 Submission Date & Time
               </span>
-              <span className="font-semibold text-gray-900 block mt-0.5">
+              <span className="font-semibold text-gray-900 block text-sm sm:text-xs">
                 {formattedDate}
               </span>
               <span className="text-[11px] text-gray-500 font-medium block">
