@@ -56,7 +56,7 @@ export function DatePicker({
   };
 
   return (
-    <div className={`space-y-1 ${className}`}>
+    <div className={`space-y-1 w-full ${className}`}>
       {label && (
         <label
           htmlFor={id}
@@ -66,8 +66,10 @@ export function DatePicker({
         </label>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+      {/* flex-wrap allows elements to drop below when space is tight */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* flex-1 with min-w-[160px] forces input to occupy at least 160px before wrapping */}
+        <div className="relative flex-1 min-w-[160px]">
           <input
             id={id}
             type="date"
@@ -77,7 +79,7 @@ export function DatePicker({
             disabled={disabled}
             required={required}
             onChange={(e) => onChange(e.target.value)}
-            className={`w-full h-10 px-3 bg-white border border-gray-300 rounded-xl text-xs text-[#2a2829] focus:outline-none focus:ring-2 focus:ring-[#045339] focus:border-transparent transition-all disabled:opacity-50 disabled:bg-gray-50 ${inputClassName}`}
+            className={`w-full h-10 pl-3 pr-2 bg-white border border-gray-300 rounded-xl text-xs text-[#2a2829] focus:outline-none focus:ring-2 focus:ring-[#045339] focus:border-transparent transition-all disabled:opacity-50 disabled:bg-gray-50 appearance-none box-border ${inputClassName}`}
           />
         </div>
 
@@ -86,9 +88,9 @@ export function DatePicker({
             type="button"
             onClick={handleTodayClick}
             disabled={disabled}
-            className="h-10 px-3.5 rounded-xl bg-emerald-50 text-[#045339] hover:bg-emerald-100 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0 active:scale-95 disabled:opacity-50"
+            className="h-10 px-3.5 rounded-xl bg-emerald-50 text-[#045339] hover:bg-emerald-100 border border-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shrink-0 active:scale-95 disabled:opacity-50 whitespace-nowrap sm:w-auto w-full"
           >
-            <Calendar className="w-3.5 h-3.5" />
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
             Today
           </button>
         )}

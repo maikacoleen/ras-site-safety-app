@@ -167,7 +167,7 @@ function LoginFormContent() {
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="e.g. John Doe or admin@ras.com"
+                  placeholder="e.g. John Doe or john@ras.com"
                   className="block w-full pl-11 pr-4 py-3 text-sm text-[#2a2829] bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#045339] focus:border-transparent transition-all placeholder:text-gray-400"
                 />
               </div>

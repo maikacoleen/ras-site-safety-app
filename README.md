@@ -78,6 +78,7 @@ Framer
 This application was built as a technical assessment and focuses on the core functionality rather than a complete production-ready user management system.
 
 * Users are assumed to already exist in the system.
+* Authentication assumes users will enter valid credentials. Brute-force protection, such as temporary account lockouts or sign-in rate limiting after repeated failed attempts, is not implemented in this assessment version.
 * The Framer experience is optimized for mobile devices, since framers are expected to complete safety forms from job sites using their phones.
 * The Admin dashboard is primarily designed for desktop use because it contains more detailed tables, filters, and review functionality. It remains usable on smaller screens, but the mobile experience is not as optimized as the Framer interface.
 * User creation and password reset are not currently implemented.
